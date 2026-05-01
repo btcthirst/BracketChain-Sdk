@@ -73,6 +73,11 @@ export interface CancelTournamentResult {
  * Refunds are chunked across multiple txs to fit Solana's 1232-byte tx limit.
  * Each chunk is sent and confirmed sequentially — if a middle chunk fails,
  * the caller can retry from the missed wallets via `participantWallets`.
+ *
+ * @throws BracketChainSDKError with code `ReadOnlyClient` if the client has no signing wallet.
+ * @throws TournamentInProgressError if status is Active or Completed.
+ * @throws UnauthorizedReporterError if the caller is not the organizer on the first call.
+ * @throws TransactionFailedError on chunked-tx rejection (caller can retry the failed range).
  */
 export async function cancelTournament(
   client: BracketChainClient,

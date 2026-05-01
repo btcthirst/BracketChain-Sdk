@@ -43,6 +43,11 @@ export interface SubscribeOptions {
  * generalize to multi-PDA filter/transform pipelines or auto-reconnect on
  * WS drop — those land in V1.
  *
+ * Errors thrown by Anchor's account decoder inside the callback are swallowed
+ * silently — consumers don't see partial state. This function itself does not
+ * throw; subscription-level RPC failures surface via the underlying connection's
+ * own error handlers.
+ *
  * @returns an unsubscribe fn that tears down every WS handler this call
  *   registered. Idempotent — safe to call multiple times.
  */

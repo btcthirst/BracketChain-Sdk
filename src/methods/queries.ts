@@ -17,6 +17,16 @@ import type {
 // Single-account fetches.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Fetch a single Tournament PDA's deserialized state.
+ *
+ * Use {@link getTournamentState} when the caller also needs the bracket and
+ * participant list — it parallelizes those reads.
+ *
+ * @throws UnknownProgramError if the PDA does not exist or is owned by a
+ *   different program.
+ * @throws TransactionFailedError on unexpected RPC failures.
+ */
 export async function getTournament(
   client: BracketChainClient,
   pda: PublicKey,
@@ -28,6 +38,15 @@ export async function getTournament(
   }
 }
 
+/**
+ * Fetch the singleton ProtocolConfig PDA (treasury, USDC mint, fee bps).
+ *
+ * Derive `pda` via {@link findProtocolConfigPda} — there is exactly one per
+ * program deployment.
+ *
+ * @throws UnknownProgramError if the protocol has not been initialized yet.
+ * @throws TransactionFailedError on unexpected RPC failures.
+ */
 export async function getProtocolConfig(
   client: BracketChainClient,
   pda: PublicKey,
@@ -47,6 +66,16 @@ export async function getProtocolConfig(
 // the indexer (Phase 4) is the right path; this is a fallback / dev tool.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * List every Tournament PDA owned by the program.
+ *
+ * Backed by `getProgramAccounts` — fine on devnet, but in production prefer
+ * the Phase 4 indexer (`GET /tournaments`) which paginates and filters by
+ * status. Treat this as a dev/fallback tool.
+ *
+ * @throws TransactionFailedError if the RPC node rejects the query (e.g. due
+ *   to size limits or rate limiting).
+ */
 export async function listTournaments(
   client: BracketChainClient,
 ): Promise<TournamentWithAddress[]> {
@@ -62,10 +91,13 @@ export async function listTournaments(
 }
 
 /**
- * Returns all MatchNode accounts belonging to a tournament.
+ * Returns all MatchNode accounts belonging to a tournament, sorted by
+ * `(round, matchIndex)` for stable UI rendering.
  *
  * Filters via memcmp on the first field after the 8-byte discriminator —
  * `tournament: Pubkey` (32 bytes at offset 8).
+ *
+ * @throws TransactionFailedError if the RPC node rejects the query.
  */
 export async function getAllMatches(
   client: BracketChainClient,
@@ -102,6 +134,8 @@ export async function getAllMatches(
  *
  * Same memcmp pattern as getAllMatches — `tournament` is the first field after
  * the discriminator.
+ *
+ * @throws TransactionFailedError if the RPC node rejects the query.
  */
 export async function listParticipants(
   client: BracketChainClient,
@@ -132,6 +166,16 @@ export async function listParticipants(
 // This is what the web app's /t/[address] page should call as its primary read.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Composite read for the tournament-detail view: fetches the Tournament PDA,
+ * its bracket (all MatchNodes), and its participant list in parallel.
+ *
+ * This is the canonical read path for the `/t/[address]` page — one call,
+ * one network round-trip's worth of latency.
+ *
+ * @throws UnknownProgramError if the Tournament PDA does not exist.
+ * @throws TransactionFailedError if any sub-query fails at the RPC level.
+ */
 export async function getTournamentState(
   client: BracketChainClient,
   tournamentPda: PublicKey,

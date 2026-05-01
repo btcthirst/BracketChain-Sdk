@@ -83,6 +83,14 @@ export interface StartTournamentResult {
  *
  * Each chunk runs with a 400K compute-unit budget (default), accounting
  * for create_account CPIs at ~5K CU per match-PDA init.
+ *
+ * @throws BracketChainSDKError with code `ReadOnlyClient` if the client has no signing wallet.
+ * @throws BracketChainSDKError with code `InvalidArgument` if `participantWallets.length !== participantCount`.
+ * @throws BracketChainSDKError with code `ParticipantCountMismatch` when auto-discovered wallets don't match on-chain count (typically RPC lag).
+ * @throws UnauthorizedReporterError if the caller is not the organizer.
+ * @throws RegistrationClosedError if status is not Registration or PendingBracketInit.
+ * @throws MinParticipantsNotMetError if `participantCount < 2`.
+ * @throws TransactionFailedError on chunk-tx rejection (the next call resumes from `matchesInitialized`).
  */
 export async function startTournament(
   client: BracketChainClient,

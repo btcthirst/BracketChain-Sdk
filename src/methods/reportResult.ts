@@ -73,6 +73,16 @@ export interface ReportResultResult {
  * For the final match, the SDK pre-creates any missing placement / treasury
  * USDC ATAs as `preInstructions` on the same tx, so callers don't need a
  * separate "Create Account" step.
+ *
+ * @throws BracketChainSDKError with code `ReadOnlyClient` if the client has no signing wallet.
+ * @throws BracketChainSDKError with code `InvalidArgument` for an unknown preset variant when computing the placement count.
+ * @throws UnauthorizedReporterError if the caller is not the organizer.
+ * @throws TournamentNotActiveError if the tournament status is not Active.
+ * @throws MatchAlreadyReportedError if the match is already Completed.
+ * @throws InvalidMatchError if the match status is not Active (e.g. parents not resolved).
+ * @throws NonParticipantWinnerError if `winner` is not one of the match's two players, or final-match `placements[0]/[1]` mismatch.
+ * @throws InvalidPayoutPresetError if `placements.length` does not match the preset's required count.
+ * @throws TransactionFailedError on other on-chain rejections.
  */
 export async function reportResult(
   client: BracketChainClient,

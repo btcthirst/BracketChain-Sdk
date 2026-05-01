@@ -88,6 +88,17 @@ function presetKind(variant: PayoutPresetVariant): string {
  * Pre-fetches `ProtocolConfig` to surface a clean `ProtocolNotInitializedError`
  * if the singleton hasn't been initialized yet — saves the caller from staring
  * at a confusing on-chain `AccountNotInitialized`.
+ *
+ * @throws BracketChainSDKError with code `ReadOnlyClient` if the client has no signing wallet.
+ * @throws BracketChainSDKError with code `InvalidArgument` for non-integer numeric inputs or unknown preset variants.
+ * @throws NameTooLongError if the name's UTF-8 byte length is 0 or > 32.
+ * @throws MinParticipantsNotMetError if `maxParticipants` < 2.
+ * @throws MaxParticipantsExceededError if `maxParticipants` > 128.
+ * @throws InvalidPayoutPresetError if the preset's minimum players exceeds `maxParticipants` (e.g. Deep with < 7).
+ * @throws RegistrationClosedError if `registrationDeadline` is at or before the current time.
+ * @throws ProtocolNotInitializedError if the singleton ProtocolConfig PDA does not exist.
+ * @throws InvalidUsdcMintError if the program rejects the USDC mint.
+ * @throws TransactionFailedError on other on-chain rejections.
  */
 export async function createTournament(
   client: BracketChainClient,

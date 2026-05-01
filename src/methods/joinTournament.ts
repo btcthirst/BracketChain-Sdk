@@ -51,6 +51,14 @@ export interface JoinTournamentResult {
  * `participantIndex` is parsed from the `ParticipantRegistered` event in the
  * confirmed tx logs — we deliberately don't re-fetch the Participant PDA, since
  * its `seed_index` is already in the event payload.
+ *
+ * @throws BracketChainSDKError with code `ReadOnlyClient` if the client has no signing wallet.
+ * @throws RegistrationClosedError if status is not Registration or the deadline has passed.
+ * @throws TournamentFullError if `participantCount === maxParticipants`.
+ * @throws InsufficientBalanceError if the player's USDC balance is below the entry fee.
+ * @throws AlreadyRegisteredError if the wallet has already registered.
+ * @throws UnknownProgramError if event parsing falls back to a Participant PDA fetch and that fetch fails.
+ * @throws TransactionFailedError on other on-chain rejections.
  */
 export async function joinTournament(
   client: BracketChainClient,
