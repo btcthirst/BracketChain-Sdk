@@ -77,7 +77,7 @@ export {
   NameTooLongError,
   MaxParticipantsExceededError,
   MinParticipantsNotMetError,
-  InvalidUsdcMintError,
+  InvalidTokenMintError,
   ProtocolNotInitializedError,
   TournamentFullError,
   AlreadyRegisteredError,

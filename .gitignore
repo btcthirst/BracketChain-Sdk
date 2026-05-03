@@ -1,3 +1,7 @@
 node_modules/
 dist/
 .env
+
+# WSL2 crash artifacts
+bash.exe.stackdump
+*.stackdump

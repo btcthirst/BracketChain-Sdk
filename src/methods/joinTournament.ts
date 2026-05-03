@@ -101,7 +101,7 @@ export async function joinTournament(
   const [vaultPda] = findVaultPda(tournamentPda, client.programId);
 
   // ── ATA: create if missing, then balance pre-check ────────────────────────
-  const playerAta = getAssociatedTokenAddressSync(tournament.usdcMint, player);
+  const playerAta = getAssociatedTokenAddressSync(tournament.tokenMint, player);
   const preInstructions = [];
   let playerBalance = new BN(0);
 
@@ -122,7 +122,7 @@ export async function joinTournament(
           player,        // payer
           playerAta,     // ata to create
           player,        // owner of the ata
-          tournament.usdcMint,
+          tournament.tokenMint,
         ),
       );
     } else {

@@ -1,14 +1,30 @@
 {
   "name": "@bracketchain/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "TypeScript SDK for the BracketChain on-chain tournament protocol on Solana — PDA-escrowed USDC tournaments with auto prize distribution.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/VitalikCholan/BracketChain-Sdk.git"
+  },
+  "keywords": [
+    "solana",
+    "anchor",
+    "tournament",
+    "bracket",
+    "usdc",
+    "spl-token",
+    "escrow",
+    "bracketchain"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     }
   },
   "files": [

@@ -91,6 +91,17 @@ export type BracketChain = {
           }
         },
         {
+          "name": "organizerTokenAccount",
+          "docs": [
+            "Organizer's ATA in the tournament's token mint. Required only when an",
+            "unrefunded `organizer_deposit > 0` is being processed in this call.",
+            "Constraints (mint + owner) are validated in-handler so that callers",
+            "processing later refund chunks may pass `None`."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
           "name": "tokenProgram",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
@@ -143,10 +154,21 @@ export type BracketChain = {
           }
         },
         {
-          "name": "usdcMint"
+          "name": "tokenMint",
+          "docs": [
+            "SPL Token mint for the tournament's prize pool. Any valid SPL mint is",
+            "accepted (USDC, wSOL for native-SOL tournaments via wrap, custom).",
+            "Frontend gatekeeps user-facing token selection — on-chain trusts the",
+            "caller. `Account<Mint>` validates the account is a real Mint."
+          ]
         },
         {
           "name": "tournament",
+          "docs": [
+            "Tournament PDA. `name` is used directly as a seed; capped at",
+            "`MAX_TOURNAMENT_NAME_LEN` (32) bytes — Solana's per-seed limit. Length",
+            "validated in the handler before account init."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -199,6 +221,19 @@ export type BracketChain = {
           }
         },
         {
+          "name": "organizerTokenAccount",
+          "docs": [
+            "Optional organizer ATA used to fund `organizer_deposit`. Required when",
+            "`organizer_deposit > 0`; pass `None` to skip. Mint + owner constraints",
+            "guarantee the deposit is debited from the organizer's own funds in the",
+            "configured tournament token. Anchor 0.32 auto-unwraps `Option<Account>`",
+            "inside constraint expressions and skips the check when the account is",
+            "`None`, so we reference fields directly without explicit Option handling."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
           "name": "tokenProgram",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
@@ -235,6 +270,10 @@ export type BracketChain = {
         {
           "name": "registrationDeadline",
           "type": "i64"
+        },
+        {
+          "name": "organizerDeposit",
+          "type": "u64"
         }
       ]
     },
@@ -287,11 +326,17 @@ export type BracketChain = {
         {
           "name": "treasury",
           "docs": [
-            "The actual ATA `(treasury, usdc_mint)` is derived at distribution time."
+            "The actual ATA `(treasury, tournament.token_mint)` is derived at",
+            "distribution time per tournament."
           ]
         },
         {
-          "name": "usdcMint"
+          "name": "defaultMint",
+          "docs": [
+            "Recommended default mint (e.g. USDC). Stored on `ProtocolConfig` as",
+            "advisory metadata — per-tournament `token_mint` is not constrained",
+            "against this."
+          ]
         },
         {
           "name": "systemProgram",
@@ -857,8 +902,8 @@ export type BracketChain = {
     },
     {
       "code": 6016,
-      "name": "invalidUsdcMint",
-      "msg": "Provided USDC mint does not match the protocol-configured mint"
+      "name": "invalidTokenMint",
+      "msg": "Provided token mint is invalid for this tournament"
     },
     {
       "code": 6017,
@@ -1088,6 +1133,26 @@ export type BracketChain = {
       }
     },
     {
+      "name": "placementPayout",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "place",
+            "type": "u8"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "protocolConfig",
       "type": {
         "kind": "struct",
@@ -1101,7 +1166,13 @@ export type BracketChain = {
             "type": "pubkey"
           },
           {
-            "name": "usdcMint",
+            "name": "defaultMint",
+            "docs": [
+              "Recommended default token mint (advisory only — clients may show this",
+              "as the \"default\" / \"preferred\" mint in their UI). Per-tournament",
+              "`tournament.token_mint` is NOT constrained against this — any SPL",
+              "mint (USDC, wSOL, custom) can be used per tournament."
+            ],
             "type": "pubkey"
           },
           {
@@ -1149,7 +1220,11 @@ export type BracketChain = {
             "type": "string"
           },
           {
-            "name": "usdcMint",
+            "name": "tokenMint",
+            "docs": [
+              "SPL Token mint for the prize pool. Any mint allowed (USDC, wSOL for",
+              "SOL tournaments, custom). Frontend gatekeeps user-facing selection."
+            ],
             "type": "pubkey"
           },
           {
@@ -1159,6 +1234,25 @@ export type BracketChain = {
           {
             "name": "entryFee",
             "type": "u64"
+          },
+          {
+            "name": "organizerDeposit",
+            "docs": [
+              "Optional organizer top-up to the prize pool, transferred into the vault",
+              "at creation. `0` is allowed. Refunded back to the organizer if the",
+              "tournament is cancelled before the first match. On completion, it stays",
+              "in the vault and is distributed as part of the prize pool (Variant B)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "organizerDepositRefunded",
+            "docs": [
+              "Tracks whether the organizer's deposit refund has been issued during a",
+              "cancellation. Independent of per-participant `refund_paid` flags so the",
+              "two paths can be processed in any order across cancel chunks."
+            ],
+            "type": "bool"
           },
           {
             "name": "maxParticipants",
@@ -1288,6 +1382,28 @@ export type BracketChain = {
           {
             "name": "completedAt",
             "type": "i64"
+          },
+          {
+            "name": "placementPayouts",
+            "docs": [
+              "Per-placement breakdown: place=1..=N for prize tiers (champion is place=1).",
+              "Includes only non-zero payouts in CPI-execution order."
+            ],
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "placementPayout"
+                }
+              }
+            }
+          },
+          {
+            "name": "treasuryRecipient",
+            "docs": [
+              "Treasury wallet receiving the protocol fee.",
+              "Self-contained event — indexers don't need extra reads."
+            ],
+            "type": "pubkey"
           }
         ]
       }
@@ -1306,11 +1422,15 @@ export type BracketChain = {
             "type": "pubkey"
           },
           {
-            "name": "usdcMint",
+            "name": "tokenMint",
             "type": "pubkey"
           },
           {
             "name": "entryFee",
+            "type": "u64"
+          },
+          {
+            "name": "organizerDeposit",
             "type": "u64"
           },
           {

@@ -4,7 +4,12 @@ import {
   SystemProgram,
   SYSVAR_RENT_PUBKEY,
 } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import {
+  TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountInstruction,
+  getAccount,
+  getAssociatedTokenAddressSync,
+} from "@solana/spl-token";
 
 import type { BracketChainClient } from "../client";
 import {
@@ -35,7 +40,7 @@ const PRESET_MIN_PARTICIPANTS: Record<string, number> = {
 export interface CreateTournamentConfig {
   /** UTF-8 name, ≤32 bytes (not characters). Used in the tournament PDA seed. */
   name: string;
-  /** Entry fee in micro-USDC (u64). 1 USDC = 1_000_000. */
+  /** Entry fee in token's base units (u64). For 6-decimal USDC, 1 USDC = 1_000_000. */
   entryFee: BN | bigint | number;
   /** Hard cap, [2, 128]. Bracket size derives from this at start time. */
   maxParticipants: number;
@@ -46,6 +51,21 @@ export interface CreateTournamentConfig {
   payoutPreset: PayoutPresetVariant;
   /** Unix timestamp (seconds). Must be strictly greater than the on-chain clock at submit time. */
   registrationDeadline: BN | bigint | number;
+  /**
+   * SPL Token mint for entry fees + prize pool. Defaults to
+   * `ProtocolConfig.defaultMint` (advisory canonical mint, e.g. USDC). Pass
+   * any valid SPL Mint to use a different token. Per-tournament; once
+   * created, all participants must hold balance in this mint.
+   */
+  tokenMint?: PublicKey;
+  /**
+   * Optional organizer top-up to the prize pool, in token base units.
+   * Defaults to `0`. When > 0, the SDK auto-creates the organizer's ATA
+   * (if missing) and transfers the deposit into the vault on the same tx.
+   * Goes INTO the prize pool (Variant B): distributed via the chosen preset
+   * on completion, refunded to the organizer if the tournament is cancelled.
+   */
+  organizerDeposit?: BN | bigint | number;
 }
 
 export interface CreateTournamentResult {
@@ -97,7 +117,7 @@ function presetKind(variant: PayoutPresetVariant): string {
  * @throws InvalidPayoutPresetError if the preset's minimum players exceeds `maxParticipants` (e.g. Deep with < 7).
  * @throws RegistrationClosedError if `registrationDeadline` is at or before the current time.
  * @throws ProtocolNotInitializedError if the singleton ProtocolConfig PDA does not exist.
- * @throws InvalidUsdcMintError if the program rejects the USDC mint.
+ * @throws InvalidTokenMintError if the supplied token mint is invalid for this tournament.
  * @throws TransactionFailedError on other on-chain rejections.
  */
 export async function createTournament(
@@ -140,6 +160,9 @@ export async function createTournament(
 
   const entryFeeBN = toBN(config.entryFee);
   const deadlineBN = toBN(config.registrationDeadline);
+  const organizerDepositBN = config.organizerDeposit !== undefined
+    ? toBN(config.organizerDeposit)
+    : new BN(0);
   const nowSec = Math.floor(Date.now() / 1000);
   if (deadlineBN.lten(nowSec)) {
     throw new RegistrationClosedError();
@@ -152,11 +175,12 @@ export async function createTournament(
   const [vaultPda] = findVaultPda(tournamentPda, client.programId);
 
   // Pre-fetch ProtocolConfig — surfaces ProtocolNotInitializedError clearly,
-  // and pulls the canonical USDC mint we must pass into the tx.
-  let usdcMint: PublicKey;
+  // and resolves the protocol's advisory `default_mint` as a fallback for
+  // tournaments that don't override the mint.
+  let defaultMint: PublicKey;
   try {
     const protocolConfig = await client.program.account.protocolConfig.fetch(protocolConfigPda);
-    usdcMint = protocolConfig.usdcMint;
+    defaultMint = protocolConfig.defaultMint;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (/Account does not exist|has no data/i.test(message)) {
@@ -165,27 +189,70 @@ export async function createTournament(
     throw mapError(err);
   }
 
+  const tokenMint = config.tokenMint ?? defaultMint;
+
+  // ── organizer ATA resolution + auto-create when deposit > 0 ───────────────
+  // Required only when organizer_deposit > 0; otherwise pass `null` and the
+  // program skips the CPI branch. We auto-create the ATA on the same tx if
+  // it doesn't exist yet, mirroring the join_tournament UX.
+  const preInstructions = [];
+  let organizerTokenAccount: PublicKey | null = null;
+
+  if (organizerDepositBN.gtn(0)) {
+    const organizerAta = getAssociatedTokenAddressSync(tokenMint, organizer);
+    organizerTokenAccount = organizerAta;
+
+    try {
+      await getAccount(client.connection, organizerAta);
+      // ATA exists — nothing to do (program will validate balance during CPI).
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (
+        err instanceof Error &&
+        (err.name === "TokenAccountNotFoundError" ||
+          /could not find|TokenAccountNotFound/i.test(message))
+      ) {
+        // Auto-create the organizer's ATA on the same tx.
+        preInstructions.push(
+          createAssociatedTokenAccountInstruction(
+            organizer,    // payer
+            organizerAta, // ata to create
+            organizer,    // owner of the ata
+            tokenMint,
+          ),
+        );
+      } else {
+        throw mapError(err);
+      }
+    }
+  }
+
   // ── build + send ──────────────────────────────────────────────────────────
   try {
-    const txSignature = await client.program.methods
+    const builder = client.program.methods
       .createTournament(
         config.name,
         entryFeeBN,
         config.maxParticipants,
         config.payoutPreset,
         deadlineBN,
+        organizerDepositBN,
       )
       .accountsPartial({
         organizer,
         protocolConfig: protocolConfigPda,
-        usdcMint,
+        tokenMint,
         tournament: tournamentPda,
         vault: vaultPda,
+        organizerTokenAccount,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
         rent: SYSVAR_RENT_PUBKEY,
-      })
-      .rpc();
+      });
+
+    const txSignature = preInstructions.length > 0
+      ? await builder.preInstructions(preInstructions).rpc()
+      : await builder.rpc();
 
     return { tournamentPda, vaultPda, txSignature };
   } catch (err) {

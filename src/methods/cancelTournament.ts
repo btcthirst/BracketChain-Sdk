@@ -1,9 +1,12 @@
 import {
   AccountMeta,
   PublicKey,
+  TransactionInstruction,
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountInstruction,
+  getAccount,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 
@@ -119,25 +122,71 @@ export async function cancelTournament(
 
   const [vaultPda] = findVaultPda(tournamentPda, client.programId);
 
+  // ── organizer-deposit refund prep (Phase 2.5, Variant B) ──────────────────
+  // Pass the organizer's ATA on the FIRST tx only — the program flips
+  // `organizer_deposit_refunded = true` after refunding, so subsequent chunks
+  // can pass `null` and the refund branch becomes a no-op. If the ATA doesn't
+  // exist yet (e.g. organizer never held this token), we auto-create it on
+  // the same tx via preInstructions.
+  const organizerDepositRefundPending =
+    tournament.organizerDeposit.gtn(0) && !tournament.organizerDepositRefunded;
+
+  let organizerAta: PublicKey | null = null;
+  const ataPreInstructions: TransactionInstruction[] = [];
+
+  if (organizerDepositRefundPending) {
+    organizerAta = getAssociatedTokenAddressSync(tournament.tokenMint, tournament.organizer);
+    try {
+      await getAccount(client.connection, organizerAta);
+      // ATA exists — no preInstruction needed.
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (
+        err instanceof Error &&
+        (err.name === "TokenAccountNotFoundError" ||
+          /could not find|TokenAccountNotFound/i.test(message))
+      ) {
+        // Caller pays for ATA creation. On a recovery call by a non-organizer,
+        // the caller is fronting the rent — they recover nothing on-chain.
+        // Acceptable for a mainly-organizer-driven flow.
+        ataPreInstructions.push(
+          createAssociatedTokenAccountInstruction(
+            caller,
+            organizerAta,
+            tournament.organizer,
+            tournament.tokenMint,
+          ),
+        );
+      } else {
+        throw mapError(err);
+      }
+    }
+  }
+
   // ── resolve refund pairs ──────────────────────────────────────────────────
   const pairs = await resolveRefundPairs(client, tournamentPda, tournament, params);
 
   if (pairs.length === 0) {
     // Nothing to refund — but if status is still Registration/PendingBracketInit,
     // we still need to flip it. Send an empty-remaining_accounts tx for that case.
-    if (statusKind === "cancelled") {
+    // If a pending organizer-deposit refund is also waiting, fold it into this
+    // single tx via the organizerTokenAccount + preInstructions.
+    if (statusKind === "cancelled" && !organizerDepositRefundPending) {
       return { txSignatures: [], refundsSubmitted: 0, statusFlipped: false };
     }
     try {
-      const sig = await client.program.methods
+      const builder = client.program.methods
         .cancelTournament()
         .accountsPartial({
           caller,
           tournament: tournamentPda,
           vault: vaultPda,
+          organizerTokenAccount: organizerAta,
           tokenProgram: TOKEN_PROGRAM_ID,
-        })
-        .rpc();
+        });
+      const sig = ataPreInstructions.length > 0
+        ? await builder.preInstructions(ataPreInstructions).rpc()
+        : await builder.rpc();
       return { txSignatures: [sig], refundsSubmitted: 0, statusFlipped: true };
     } catch (err) {
       throw mapError(err);
@@ -154,23 +203,32 @@ export async function cancelTournament(
   const txSignatures: string[] = [];
   let statusFlipped = statusKind === "cancelled";
 
-  for (const chunk of chunks) {
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i]!;
+    const isFirstChunk = i === 0;
     const remainingAccounts: AccountMeta[] = chunk.flatMap(([pda, ata]) => [
       { pubkey: pda, isSigner: false, isWritable: true },
       { pubkey: ata, isSigner: false, isWritable: true },
     ]);
 
     try {
-      const sig = await client.program.methods
+      // Pass organizer ATA + ATA-create preInstructions only on first chunk.
+      // Subsequent chunks pass `null`: the program's flag-gate makes the
+      // refund branch a no-op, so we skip the extra account/CU per chunk.
+      const builder = client.program.methods
         .cancelTournament()
         .accountsPartial({
           caller,
           tournament: tournamentPda,
           vault: vaultPda,
+          organizerTokenAccount: isFirstChunk ? organizerAta : null,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
-        .remainingAccounts(remainingAccounts)
-        .rpc();
+        .remainingAccounts(remainingAccounts);
+
+      const sig = isFirstChunk && ataPreInstructions.length > 0
+        ? await builder.preInstructions(ataPreInstructions).rpc()
+        : await builder.rpc();
       txSignatures.push(sig);
       statusFlipped = true;
     } catch (err) {
@@ -190,7 +248,7 @@ async function resolveRefundPairs(
   if (params.participantWallets && params.participantWallets.length > 0) {
     return params.participantWallets.map((wallet) => {
       const [pda] = findParticipantPda(tournamentPda, wallet, client.programId);
-      const ata = getAssociatedTokenAddressSync(tournament.usdcMint, wallet);
+      const ata = getAssociatedTokenAddressSync(tournament.tokenMint, wallet);
       return [pda, ata] as const;
     });
   }
@@ -215,7 +273,7 @@ async function resolveRefundPairs(
     .filter((entry) => !(entry.account as Participant).refundPaid)
     .map((entry) => {
       const account = entry.account as Participant;
-      const ata = getAssociatedTokenAddressSync(tournament.usdcMint, account.wallet);
+      const ata = getAssociatedTokenAddressSync(tournament.tokenMint, account.wallet);
       return [entry.publicKey, ata] as const;
     });
 }

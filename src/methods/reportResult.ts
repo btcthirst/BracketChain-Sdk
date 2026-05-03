@@ -248,14 +248,14 @@ async function reportFinal(
     throw mapError(err);
   }
 
-  const usdcMint = tournament.usdcMint;
+  const tokenMint = tournament.tokenMint;
 
   // Build ATA list: [...placementATAs, treasuryATA]
   const placementAtas = placements.map((wallet) =>
-    getAssociatedTokenAddressSync(usdcMint, wallet),
+    getAssociatedTokenAddressSync(tokenMint, wallet),
   );
   const treasuryAta = getAssociatedTokenAddressSync(
-    usdcMint,
+    tokenMint,
     protocolConfig.treasury,
   );
 
@@ -263,7 +263,7 @@ async function reportFinal(
   const preInstructions = await buildAtaCreationIxs(
     client,
     organizer,
-    usdcMint,
+    tokenMint,
     [
       ...placements.map((wallet, i) => ({ owner: wallet, ata: placementAtas[i]! })),
       { owner: protocolConfig.treasury, ata: treasuryAta },

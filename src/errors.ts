@@ -88,11 +88,11 @@ export class MinParticipantsNotMetError extends BracketChainSDKError {
   }
 }
 
-export class InvalidUsdcMintError extends BracketChainSDKError {
+export class InvalidTokenMintError extends BracketChainSDKError {
   constructor(cause?: unknown) {
     super(
-      "USDC mint passed to the instruction does not match the protocol_config's configured mint.",
-      "InvalidUsdcMint",
+      "Token mint provided to the instruction does not match the tournament's configured mint, or is not a valid SPL Mint.",
+      "InvalidTokenMint",
       cause,
     );
   }
@@ -259,7 +259,7 @@ const ERRORS_RS_ORDER = [
   "MaxParticipantsExceeded",    // 6013
   "MinParticipantsNotMet",      // 6014
   "NameTooLong",                // 6015
-  "InvalidUsdcMint",            // 6016
+  "InvalidTokenMint",           // 6016
   "InvalidVault",               // 6017
   "InvalidTreasury",            // 6018
   "InvalidMatchIndex",          // 6019
@@ -288,7 +288,7 @@ const ON_CHAIN_TO_SDK: Record<OnChainErrorName, new (cause?: unknown) => Bracket
   MaxParticipantsExceeded: MaxParticipantsExceededError,
   MinParticipantsNotMet: MinParticipantsNotMetError,
   NameTooLong: NameTooLongError,
-  InvalidUsdcMint: InvalidUsdcMintError,
+  InvalidTokenMint: InvalidTokenMintError,
   InvalidVault: TransactionFailedError as never,
   InvalidTreasury: TransactionFailedError as never,
   InvalidMatchIndex: InvalidMatchError,
