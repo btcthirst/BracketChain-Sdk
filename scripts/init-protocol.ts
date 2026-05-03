@@ -172,11 +172,11 @@ async function main(): Promise<void> {
     console.log("\n✅ ProtocolConfig already initialized:");
     console.log(`   authority:  ${cfg.authority.toBase58()}`);
     console.log(`   treasury:   ${cfg.treasury.toBase58()}`);
-    console.log(`   usdc_mint:  ${cfg.usdcMint.toBase58()}`);
-    console.log(`   fee_bps:    ${cfg.feeBps}`);
-    if (!cfg.usdcMint.equals(cli.usdcMint)) {
+    console.log(`   default_mint: ${cfg.defaultMint.toBase58()}`);
+    console.log(`   fee_bps:      ${cfg.feeBps}`);
+    if (!cfg.defaultMint.equals(cli.usdcMint)) {
       console.log(
-        `\n⚠️  on-chain usdc_mint differs from your --usdc-mint argument. Existing config wins; reinit is not possible without redeploying the program.`,
+        `\n⚠️  on-chain default_mint differs from your --usdc-mint argument. Existing config wins; reinit is not possible without redeploying the program.`,
       );
     }
     return;
@@ -190,7 +190,7 @@ async function main(): Promise<void> {
       authority: funder.publicKey,
       protocolConfig: protocolConfigPda,
       treasury,
-      usdcMint: cli.usdcMint,
+      defaultMint: cli.usdcMint,
       systemProgram: SystemProgram.programId,
     })
     .rpc();
@@ -201,10 +201,10 @@ async function main(): Promise<void> {
 
   // ── Verify ─────────────────────────────────────────────────────────────────
   const cfg = await program.account.protocolConfig.fetch(protocolConfigPda);
-  console.log(`   authority:  ${cfg.authority.toBase58()}`);
-  console.log(`   treasury:   ${cfg.treasury.toBase58()}`);
-  console.log(`   usdc_mint:  ${cfg.usdcMint.toBase58()}`);
-  console.log(`   fee_bps:    ${cfg.feeBps}`);
+  console.log(`   authority:    ${cfg.authority.toBase58()}`);
+  console.log(`   treasury:     ${cfg.treasury.toBase58()}`);
+  console.log(`   default_mint: ${cfg.defaultMint.toBase58()}`);
+  console.log(`   fee_bps:      ${cfg.feeBps}`);
 }
 
 main().catch((err) => {

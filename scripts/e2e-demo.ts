@@ -191,17 +191,17 @@ async function bootstrapProtocol(
   if (existing) {
     const cfg = await program.account.protocolConfig.fetch(protocolConfigPda);
     console.log(
-      `  protocol_config exists: usdc_mint=${shortAddr(cfg.usdcMint)} treasury=${shortAddr(cfg.treasury)}`,
+      `  protocol_config exists: default_mint=${shortAddr(cfg.defaultMint)} treasury=${shortAddr(cfg.treasury)}`,
     );
     let funderControlsMint = false;
     try {
-      const mint = await getMint(conn, cfg.usdcMint);
+      const mint = await getMint(conn, cfg.defaultMint);
       funderControlsMint = mint.mintAuthority?.equals(funder.publicKey) ?? false;
     } catch {
       // Mint may have been frozen / closed — treat as not controlled.
     }
     return {
-      usdcMint: cfg.usdcMint,
+      usdcMint: cfg.defaultMint,
       treasury: cfg.treasury,
       funderControlsMint,
     };
@@ -227,7 +227,7 @@ async function bootstrapProtocol(
       authority: funder.publicKey,
       protocolConfig: protocolConfigPda,
       treasury,
-      usdcMint,
+      defaultMint: usdcMint,
       systemProgram: SystemProgram.programId,
     })
     .rpc();

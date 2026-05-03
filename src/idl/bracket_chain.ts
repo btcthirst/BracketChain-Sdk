@@ -1444,6 +1444,14 @@ export type BracketChain = {
           {
             "name": "registrationDeadline",
             "type": "i64"
+          },
+          {
+            "name": "name",
+            "docs": [
+              "Human-readable tournament name (≤ MAX_TOURNAMENT_NAME_LEN bytes).",
+              "Indexers consume this to populate listing UIs without a follow-up RPC."
+            ],
+            "type": "string"
           }
         ]
       }
