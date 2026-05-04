@@ -33,10 +33,15 @@ export type {
   PayoutPresetVariant,
   TournamentStatusVariant,
   MatchStatusVariant,
-  BN,
   PublicKey,
 } from "./types";
 export { getEnumKind, payoutPreset } from "./types";
+
+// Re-export BN as a runtime value so SDK consumers can construct BN instances
+// (e.g. for entry-fee args, deadline, organizer-deposit) without installing
+// bn.js or @coral-xyz/anchor as a direct dependency. The type is already
+// re-exported above via `BN` in the type-only block.
+export { default as BN } from "bn.js";
 
 // Methods — reads + mutations
 export {
@@ -67,6 +72,26 @@ export type {
   SubscribeOptions,
   TournamentSubscriptionEvent,
 } from "./methods";
+
+// Indexer client (Phase 5.1) — typed REST wrapper for the indexer service.
+// Composes orthogonally with BracketChainClient; Phase 5.3 will weave them
+// together via SWR for indexer-first reads with chain-side reconciliation.
+export { BracketChainIndexerClient } from "./api";
+export type {
+  IndexerClientOptions,
+  IndexerTournament,
+  IndexerPayout,
+  IndexerParticipant,
+  IndexerMatch,
+  IndexerTournamentStatus,
+  IndexerPayoutPreset,
+  IndexerPayoutKind,
+  IndexerMatchStatus,
+  ListTournamentsOptions,
+  GetPayoutsOptions,
+  GetParticipantsOptions,
+  GetMatchesOptions,
+} from "./api";
 
 // Errors — base class + every typed subclass + the mapError helper
 export {
