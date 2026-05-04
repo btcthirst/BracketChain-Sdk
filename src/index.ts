@@ -79,6 +79,7 @@ export {
   MinParticipantsNotMetError,
   InvalidTokenMintError,
   ProtocolNotInitializedError,
+  TournamentNameTakenError,
   TournamentFullError,
   AlreadyRegisteredError,
   InsufficientBalanceError,

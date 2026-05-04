@@ -151,6 +151,14 @@ export async function joinTournament(
       .preInstructions(preInstructions)
       .rpc();
   } catch (err) {
+    // Anchor `init` of Participant PDA collides when this wallet has already
+    // registered. Surface AlreadyRegisteredError before the generic mapper
+    // (the global "already in use" fallback was removed to keep create-flow
+    // collisions from being mismapped).
+    const message = err instanceof Error ? err.message : String(err);
+    if (/already in use/i.test(message)) {
+      throw new AlreadyRegisteredError(err);
+    }
     throw mapError(err);
   }
 

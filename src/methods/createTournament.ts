@@ -20,6 +20,7 @@ import {
   NameTooLongError,
   ProtocolNotInitializedError,
   RegistrationClosedError,
+  TournamentNameTakenError,
   mapError,
 } from "../errors";
 import { findProtocolConfigPda, findTournamentPda, findVaultPda } from "../pdas";
@@ -174,14 +175,28 @@ export async function createTournament(
   const [tournamentPda] = findTournamentPda(organizer, config.name, client.programId);
   const [vaultPda] = findVaultPda(tournamentPda, client.programId);
 
-  // Pre-fetch ProtocolConfig — surfaces ProtocolNotInitializedError clearly,
-  // and resolves the protocol's advisory `default_mint` as a fallback for
-  // tournaments that don't override the mint.
+  // Pre-flight: parallel fetch of ProtocolConfig (must exist) + tournament PDA
+  // (must NOT exist). Doing both in parallel saves one RTT vs sequential.
+  // PDA seeds are [b"tournament", organizer, name] — collision = duplicate name
+  // by the same organizer. Surface a clear TournamentNameTakenError before we
+  // pay tx fees and before Anchor's "account already in use" leaks through.
+  const [protocolConfigResult, existingTournamentInfo] = await Promise.all([
+    client.program.account.protocolConfig.fetch(protocolConfigPda).then(
+      (cfg) => ({ ok: true as const, cfg }),
+      (err: unknown) => ({ ok: false as const, err }),
+    ),
+    client.connection.getAccountInfo(tournamentPda),
+  ]);
+
+  if (existingTournamentInfo !== null) {
+    throw new TournamentNameTakenError();
+  }
+
   let defaultMint: PublicKey;
-  try {
-    const protocolConfig = await client.program.account.protocolConfig.fetch(protocolConfigPda);
-    defaultMint = protocolConfig.defaultMint;
-  } catch (err) {
+  if (protocolConfigResult.ok) {
+    defaultMint = protocolConfigResult.cfg.defaultMint;
+  } else {
+    const err = protocolConfigResult.err;
     const message = err instanceof Error ? err.message : String(err);
     if (/Account does not exist|has no data/i.test(message)) {
       throw new ProtocolNotInitializedError(err);
@@ -256,6 +271,12 @@ export async function createTournament(
 
     return { tournamentPda, vaultPda, txSignature };
   } catch (err) {
+    // TOCTOU: pre-flight passed but a competing tx (same organizer, same name)
+    // landed between our check and our send. Surface the same clean error.
+    const message = err instanceof Error ? err.message : String(err);
+    if (/already in use/i.test(message)) {
+      throw new TournamentNameTakenError(err);
+    }
     throw mapError(err);
   }
 }

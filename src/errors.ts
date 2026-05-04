@@ -108,6 +108,16 @@ export class ProtocolNotInitializedError extends BracketChainSDKError {
   }
 }
 
+export class TournamentNameTakenError extends BracketChainSDKError {
+  constructor(cause?: unknown) {
+    super(
+      "You already have a tournament with this name. Tournament PDA seeds are [organizer, name] — pick a different name.",
+      "TournamentNameTaken",
+      cause,
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // US-D02: joinTournament errors
 // ─────────────────────────────────────────────────────────────────────────────
@@ -331,9 +341,10 @@ export function mapError(err: unknown): BracketChainSDKError {
     return new InsufficientBalanceError(err);
   }
 
-  if (/already in use/i.test(message)) {
-    return new AlreadyRegisteredError(err);
-  }
+  // Note: "account already in use" is intentionally NOT mapped here.
+  // Different methods need different errors (createTournament → TournamentNameTaken,
+  // joinTournament → AlreadyRegistered). Each call site handles it locally before
+  // delegating to mapError so the user sees a meaningful message.
 
   return new UnknownProgramError(err);
 }
