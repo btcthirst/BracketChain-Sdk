@@ -25,4 +25,8 @@ export { reportResult } from "./reportResult";
 export type { ReportResultParams, ReportResultResult } from "./reportResult";
 
 export { subscribe } from "./subscribe";
-export type { SubscribeOptions, TournamentSubscriptionEvent } from "./subscribe";
+export type {
+  SubscribeOptions,
+  SubscriptionError,
+  TournamentSubscriptionEvent,
+} from "./subscribe";

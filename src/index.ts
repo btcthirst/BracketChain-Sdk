@@ -70,6 +70,7 @@ export type {
   ReportResultParams,
   ReportResultResult,
   SubscribeOptions,
+  SubscriptionError,
   TournamentSubscriptionEvent,
 } from "./methods";
 

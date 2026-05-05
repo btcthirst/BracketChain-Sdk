@@ -32,6 +32,27 @@ export interface SubscribeOptions {
    * provider commitment.
    */
   commitment?: Commitment;
+  /**
+   * Phase 5.4: invoked when a subscription's account-change handler throws
+   * during decode, OR when the underlying WebSocket signals an error event.
+   *
+   * Consumers can plug their own resub strategy here — the most common
+   * pattern is to tear down the current subscription and call `subscribe()`
+   * again after a backoff window. The SDK does NOT auto-resubscribe in MVP
+   * (full Drift v2 resub manager is V1+ scope) — the frontend's 30s inactivity
+   * reconcile is the safety net for transient WS drops.
+   */
+  onError?: (err: SubscriptionError) => void;
+}
+
+/** Phase 5.4: typed error surface for subscribe() callbacks. */
+export interface SubscriptionError {
+  /** Address whose handler threw, or null for connection-level errors. */
+  address: PublicKey | null;
+  /** Underlying error or message. */
+  cause: unknown;
+  /** Subscription kind that errored — useful for selective resub. */
+  kind: "tournament" | "match" | "connection";
 }
 
 /**
@@ -59,6 +80,7 @@ export function subscribe(
 ): () => void {
   const commitment = options.commitment ?? client.provider.opts.commitment;
   const subscriptionIds: number[] = [];
+  const onError = options.onError;
 
   // Tournament account
   const tournamentSubId = client.connection.onAccountChange(
@@ -70,9 +92,13 @@ export function subscribe(
           accountInfo.data,
         );
         callback({ kind: "tournament", address: tournamentPda, account });
-      } catch {
+      } catch (err) {
         // Decode failure — account might have been closed or written by another
-        // program. Drop the event silently; consumers don't need partial state.
+        // program. Surface to onError so consumers can decide whether to resub
+        // (Phase 5.4); previously this was swallowed silently.
+        if (onError) {
+          onError({ address: tournamentPda, cause: err, kind: "tournament" });
+        }
       }
     },
     commitment,
@@ -90,8 +116,10 @@ export function subscribe(
             accountInfo.data,
           );
           callback({ kind: "match", address: matchPda, account });
-        } catch {
-          // Same as above — drop silently.
+        } catch (err) {
+          if (onError) {
+            onError({ address: matchPda, cause: err, kind: "match" });
+          }
         }
       },
       commitment,
